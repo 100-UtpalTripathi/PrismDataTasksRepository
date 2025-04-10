@@ -1,0 +1,2 @@
+1. All the spot Instances have lineitem_operation = 'RunInstances:{Some internal AWS billing code}'
+2. 

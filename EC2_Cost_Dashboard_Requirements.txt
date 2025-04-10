@@ -1,0 +1,51 @@
+EC2 Instance Cost Dashboard – Requirements Document
+
+Overview
+This dashboard provides a comprehensive view of EC2 instance costs across accounts, coverage types, instance types, and 
+other dimensions, allowing users to analyze cost patterns and optimize compute spend.
+
+Dashboard Purpose
+To enable finance, engineering, and cloud operations teams to visualize EC2 cost breakdowns over time, 
+compare spend across coverage models (On-Demand, RI, Spot, Savings Plans), and track costs by instance types, 
+availability zones, tenancy, and reservation types.
+
+Dashboard Filters
+• Time Interval: Allows users to analyze cost data at daily, weekly, or monthly granularity.
+• Accounts: Filters data by modelid or billing account for multi-account environments.
+• Availability Zone: Enables cost breakdown by the AWS availability zone where resources run.
+• Coverage Type: Segments cost by compute purchase option such as On Demand, Spot, RI, or SP.
+• Instance Type: Filters or groups cost data by EC2 instance type like t3.medium.
+• Reservation Type: Classifies RI costs by payment model – No Upfront, Partial, or All.
+• Tenancy: Shows cost based on instance tenancy – default, dedicated, or host.
+• VPC: Filters EC2 usage based on VPC using tag metadata if available.
+
+Breakdown / Group By Options
+• Coverage Type – Classifies compute spend across OnDemand, Spot, RI, and Savings Plans.
+• Instance Type – Groups cost by exact EC2 type such as m5.large.
+• Instance Family – Aggregates cost by instance family (e.g., m5, c6g).
+• Availability Zone – Breaks down compute spend by region and zone.
+• Accounts / Billing Accounts – Tracks cost distribution across AWS accounts.
+• Reservation Type – Segregates spend based on reservation payment model.
+• Tenancy – Compares cost by tenancy level: default, dedicated, or host.
+• VPC – Enables cost insights per VPC, where tagging is present.
+
+Graph Coloring Categories
+• Coverage Type – Visualizes compute type cost (e.g., OnDemand vs Spot).
+• Billing Account – Differentiates spend by billing entities.
+
+CUR Fields Used (Athena Table: prism-raw.etl_output)
+• yearmonth, lineitem_usage_start_date – Used for time series grouping.
+• modelid, lineitem_usage_account_id – For account-based filtering.
+• bill_billingentity, bill_payer_account_id – Identifies billing source.
+• lineitem_lineitemtype – Core for identifying OnDemand, RI, SP, Fee, etc.
+• lineitem_operation – Helps detect Spot, RI, or Savings Plan usage.
+• lineitem_usagetype – Extracts instance type/family, or usage category.
+• product_operatingsystem – Enables breakdown by OS like Linux or Windows.
+• availability_zone – Groups compute usage by physical zone.
+• product_tenancy – Tracks tenancy for cost comparisons.
+• lineitem_unblendedcost, lineitem_blendedcost, effective_cost, list_price – Core cost metrics.
+• resource_tags_user_vpc – Used for filtering/grouping by VPC when tagged.
+
+Querying Layer (Athena)
+All queries are executed on Athena over AWS CUR with table `prism-raw.etl_output`. Queries use filters like `yearmonth`, `modelid`, 
+and calculated fields for grouping by coverage type, instance family/type, operating system, and more.
