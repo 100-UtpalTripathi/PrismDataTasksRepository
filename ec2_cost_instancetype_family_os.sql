@@ -216,6 +216,7 @@ SELECT
     -- Account Information
     lineitem_usageaccountid,
     bill_payeraccountid,
+    bill_billingentity,
 
     -- Product Info
     product_productname,
@@ -279,6 +280,7 @@ WHERE
     )
     AND product_productname = 'Amazon Elastic Compute Cloud'
     AND bill_billingentity = 'AWS';
+
 
 
 
@@ -447,6 +449,62 @@ WHERE savingsplan_savingsplanarn IS NOT NULL
   AND yearmonth LIKE '202501%'
   AND product_productname = 'Amazon Elastic Compute Cloud'
 LIMIT 100;
+
+
+
+
+
+SELECT
+  modelid,
+  DATE(lineitem_usagestartdate) AS usage_day,
+
+  -- EC2 Coverage Type Classification logic
+  CASE
+    WHEN savingsplan_savingsplanarn <> '' THEN
+      CASE
+        WHEN savingsplan_offeringtype = 'ComputeSavingsPlans' THEN 'Compute Savings Plan'
+        WHEN savingsplan_offeringtype = 'EC2InstanceSavingsPlans' THEN 'EC2 Savings Plan'
+        ELSE 'Savings Plan'
+      END
+
+    WHEN reservation_reservationarn <> '' AND pricing_offeringclass = 'standard' THEN 'Standard RI'
+    WHEN reservation_reservationarn <> '' AND pricing_offeringclass = 'convertible' THEN 'Convertible RI'
+
+    WHEN lineitem_usagetype LIKE '%SpotUsage%' THEN 'Spot'
+
+    WHEN (
+      (savingsplan_savingsplanarn IS NULL OR savingsplan_savingsplanarn = '')
+      AND (reservation_reservationarn IS NULL OR reservation_reservationarn = '')
+      AND lineitem_lineitemtype = 'Usage'
+      AND lineitem_usagetype LIKE '%BoxUsage%'
+      AND lineitem_usagetype NOT LIKE '%Spot%'
+    ) THEN 'On Demand'
+
+    ELSE 'Other EC2 costs'
+  END AS ec2_coverage_type,
+
+  -- Basic cost metrics only
+  SUM(lineitem_blendedcost) AS total_blended_cost,
+  SUM(lineitem_unblendedcost) AS total_unblended_cost
+  
+
+FROM "prism-raw"."ec2_dashboard_dataset"
+
+WHERE 
+  yearmonth LIKE '2025%'
+  AND product_productname = 'Amazon Elastic Compute Cloud'
+  AND bill_billingentity = 'AWS'
+
+GROUP BY 1, 2, 3
+ORDER BY 1, 2;
+
+
+
+
+
+
+
+
 
 
 
