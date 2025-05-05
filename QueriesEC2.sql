@@ -1,207 +1,3 @@
--- ec2 data for each coverage type - OnDemand, SPot adn reserved
--- ec2 cost dat for each instance type families 
--- and instance types
--- ec2 cost data for each Operating System
--- Get distinct EC2 operation types for AWS billing
-SELECT DISTINCT lineitem_operation
-FROM "prism-raw"."etl_output"
-WHERE bill_billingentity = 'AWS'
-    AND product_productname = 'Amazon Elastic Compute Cloud';
--- Get distinct EC2 line item types for AWS billing
-SELECT DISTINCT lineitem_lineitemtype
-FROM "prism-raw"."etl_output"
-WHERE bill_billingentity = 'AWS'
-    AND product_productname = 'Amazon Elastic Compute Cloud';
--- Aggregate costs by model and EC2 coverage type (OnDemand, Spot, Reserved, SavingsPlan)
-SELECT yearmonth,
-    modelid,
-    product_productname,
-    CASE
-        WHEN lineitem_usagetype LIKE '%SpotUsage%' THEN 'Spot'
-        WHEN lineitem_lineitemtype IN ('DiscountedUsage', 'RIFee') THEN 'Reserved'
-        WHEN lineitem_lineitemtype IN ('SavingsPlanCoveredUsage', 'SavingsPlanNegation') THEN 'SavingsPlan'
-        WHEN lineitem_lineitemtype = 'Usage'
-        AND lineitem_operation = 'RunInstances' THEN 'OnDemand'
-        ELSE 'Other'
-    END AS coverage_type,
-    SUM(lineitem_unblendedcost) AS UnblendedCost,
-    SUM(lineitem_blendedcost) AS BlendedCost,
-    SUM(list_price) AS ListPrice,
-    SUM(effective_cost) AS EffectiveCost
-FROM "prism-raw"."etl_output"
-WHERE yearmonth LIKE '2025%'
-    AND modelid IN (
-        '0532721b-5c2d-43dc-9e1b-dc6f047e59ab',
-        'bfb69248-c991-463f-824f-0317df6e57b5'
-    )
-    AND product_productname = 'Amazon Elastic Compute Cloud'
-    AND bill_billingentity = 'AWS'
-    AND lineitem_operation IN (
-        'RunInstances',
-        'SpotUsage',
-        'SavingsPlanCoveredUsage',
-        'ReservedInstances',
-        'DedicatedHostUsage'
-    )
-GROUP BY 1,
-    2,
-    3,
-    4
-ORDER BY 1,
-    4;
--- Aggregate EC2 costs by instance family, inferred from usage type
-SELECT yearmonth,
-    modelid,
-    product_productname,
-    lineitem_usagetype,
-    split_part(split_part(lineitem_usagetype, ':', 2), '.', 1) AS instance_family,
-    SUM(lineitem_unblendedcost) AS UnblendedCost,
-    SUM(lineitem_blendedcost) AS BlendedCost,
-    SUM(list_price) AS ListPrice,
-    SUM(effective_cost) AS EffectiveCost
-FROM "prism-raw"."etl_output"
-WHERE yearmonth LIKE '2025%'
-    AND modelid IN (
-        '0532721b-5c2d-43dc-9e1b-dc6f047e59ab',
-        'bfb69248-c991-463f-824f-0317df6e57b5'
-    )
-    AND product_productname = 'Amazon Elastic Compute Cloud'
-    AND bill_billingentity = 'AWS'
-    AND (
-        lineitem_usagetype LIKE '%BoxUsage:%'
-        OR lineitem_usagetype LIKE '%SpotUsage:%'
-        OR lineitem_usagetype LIKE '%HeavyUsage:%'
-    )
-GROUP BY 1,
-    2,
-    3,
-    4,
-    5
-ORDER BY 1,
-    4;
--- Get distinct usage types related to EC2 usage in 2025
-SELECT DISTINCT lineitem_usagetype
-FROM "prism-raw"."etl_output"
-WHERE yearmonth LIKE '2025%'
-    AND product_productname = 'Amazon Elastic Compute Cloud'
-    AND bill_billingentity = 'AWS'
-    AND lineitem_usagetype LIKE '%Usage%';
--- Aggregate EC2 costs by instance type (parsed from usage type)
-SELECT yearmonth,
-    modelid,
-    product_productname,
-    split_part(lineitem_usagetype, ':', 2) AS instance_type,
-    SUM(lineitem_unblendedcost) AS UnblendedCost,
-    SUM(lineitem_blendedcost) AS BlendedCost,
-    SUM(list_price) AS ListPrice,
-    SUM(effective_cost) AS EffectiveCost
-FROM "prism-raw"."etl_output"
-WHERE yearmonth LIKE '2025%'
-    AND modelid IN (
-        '0532721b-5c2d-43dc-9e1b-dc6f047e59ab',
-        'bfb69248-c991-463f-824f-0317df6e57b5'
-    )
-    AND product_productname = 'Amazon Elastic Compute Cloud'
-    AND bill_billingentity = 'AWS'
-    AND (
-        lineitem_usagetype LIKE '%BoxUsage:%'
-        OR lineitem_usagetype LIKE '%SpotUsage:%'
-        OR lineitem_usagetype LIKE '%HeavyUsage:%'
-    )
-GROUP BY 1,
-    2,
-    3,
-    4
-ORDER BY 1,
-    4;
--- Aggregate EC2 costs by operating system group
-SELECT yearmonth,
-    modelid,
-    product_productname,
-    CASE
-        WHEN product_operatingsystem IN ('Linux', 'Ubuntu Pro') THEN 'Linux/UNIX'
-        WHEN product_operatingsystem IN ('RHEL', 'Red Hat Enterprise Linux with HA') THEN 'RHEL'
-        WHEN product_operatingsystem = 'SUSE' THEN 'SUSE'
-        WHEN product_operatingsystem = 'Windows' THEN 'Windows'
-        ELSE 'Unknown/Other'
-    END AS os_group,
-    SUM(lineitem_unblendedcost) AS UnblendedCost,
-    SUM(lineitem_blendedcost) AS BlendedCost,
-    SUM(list_price) AS ListPrice,
-    SUM(effective_cost) AS EffectiveCost
-FROM "prism-raw"."etl_output"
-WHERE yearmonth LIKE '2025%'
-    AND modelid IN (
-        '0532721b-5c2d-43dc-9e1b-dc6f047e59ab',
-        'bfb69248-c991-463f-824f-0317df6e57b5'
-    )
-    AND product_productname = 'Amazon Elastic Compute Cloud'
-    AND bill_billingentity = 'AWS'
-    AND (
-        lineitem_usagetype LIKE '%BoxUsage:%'
-        OR lineitem_usagetype LIKE '%SpotUsage:%'
-        OR lineitem_usagetype LIKE '%HeavyUsage:%'
-    )
-GROUP BY 1,
-    2,
-    3,
-    4
-ORDER BY 1,
-    4;
--- Get distinct operating systems for EC2 usage
-SELECT DISTINCT product_operatingsystem AS operating_system
-FROM "prism-raw"."etl_output"
-WHERE yearmonth LIKE '2025%'
-    AND product_productname = 'Amazon Elastic Compute Cloud'
-    AND bill_billingentity = 'AWS'
-    AND (
-        lineitem_usagetype LIKE '%BoxUsage:%'
-        OR lineitem_usagetype LIKE '%SpotUsage:%'
-        OR lineitem_usagetype LIKE '%HeavyUsage:%'
-    );
-
-
-
--- Instance Cost by Days and Coverage Type
--- Filters - ???
--- Interval
--- daily
--- Weekly
--- Monthly
--- X-Axis
--- Days
--- Accounts
--- Availabiltiy Zones
--- Billing Accounts
--- Category(Colored on bar on hte graph)
--- Billing Accounts
--- Coverage Type
--- Compute Savings Plan
--- On Demand
--- Standard RI
--- Spot
--- EC2 Svaings Plan
--- Convertible RI
--- Accounts
--- Availability Zone
--- Instance Type
--- Different instance types
--- Reservation Type
--- No Upfront
--- On Demand
--- Partial Upfront
--- Spot
--- All Upront
--- Tenancy - Low Priority
--- VPC
--- --  
-
-
-
-Step1 : create s3 bucket...
-
-
-
 CREATE TABLE "prism-raw"."ec2_dashboard_dataset"
 WITH (
     format = 'PARQUET',
@@ -536,3 +332,145 @@ ORDER BY 1, 2;
 
 
 
+
+
+
+
+-- UPDATED WORKING QUERY
+
+SELECT bill_billingentity,
+bill_payeraccountid,
+lineitem_usageaccountid,
+DATE (lineitem_usagestartdate) lineitem_usagedate,
+CASE
+    WHEN ("bill_billingentity" = 'AWS Marketplace' AND "lineitem_lineitemtype" NOT LIKE '%Discount%')
+    THEN "product_productname"
+    WHEN ("bill_billingentity" = 'AWS') THEN "lineitem_productcode"
+    END                                            AS "Service",
+-- CASE
+--            WHEN (lineitem_usagetype LIKE '%SpotUsage%') THEN SPLIT_PART(lineitem_usagetype, ':', 2)
+--            ELSE product_instancetype
+--         END                                        AS case_product_instance_type,
+product_instancetype, product_instancefamily,-- lineitem_usagetype,
+CASE
+           WHEN (savingsplan_savingsplanarn <> '') THEN 'SavingsPlan'
+           WHEN (reservation_reservationarn <> '') THEN 'Reserved'
+           WHEN (lineitem_usagetype LIKE '%Spot%') THEN 'Spot'
+           ELSE 'OnDemand'
+        END                                        AS                   case_purchase_option,
+coalesce(pricing_offeringclass, 'N/A') AS RI_CoverageType,
+coalesce(savingsplan_offeringtype, 'N/A') AS SP_CoverageType,
+SUM(lineitem_usageamount)                          AS                   sum_line_item_usage_amount,
+SUM(lineitem_unblendedcost)                        AS                   sum_line_item_unblended_cost,
+SUM(CASE
+               WHEN (lineitem_lineitemtype = 'SavingsPlanCoveredUsage') THEN savingsplan_savingsplaneffectivecost
+               WHEN (lineitem_lineitemtype = 'SavingsPlanRecurringFee')
+                   THEN (savingsplan_totalcommitmenttodate - savingsplan_usedcommitment)
+               WHEN (lineitem_lineitemtype = 'SavingsPlanNegation') THEN 0
+               WHEN (lineitem_lineitemtype = 'SavingsPlanUpfrontFee') THEN 0
+               WHEN (lineitem_lineitemtype = 'DiscountedUsage') THEN reservation_effectivecost
+               WHEN (lineitem_lineitemtype = 'RIFee') THEN (
+                   reservation_unusedamortizedupfrontfeeforbillingperiod + reservation_unusedrecurringfee)
+               WHEN ((lineitem_lineitemtype = 'Fee') AND (reservation_reservationarn <> '')) THEN 0
+               ELSE lineitem_unblendedcost
+           END)                                    AS                   amortized_cost,
+(SUM(lineitem_unblendedcost)
+   - SUM(CASE
+             WHEN (lineitem_lineitemtype = 'SavingsPlanCoveredUsage')
+                 THEN savingsplan_savingsplaneffectivecost
+             WHEN (lineitem_lineitemtype = 'SavingsPlanRecurringFee')
+                 THEN (savingsplan_totalcommitmenttodate - savingsplan_usedcommitment)
+             WHEN (lineitem_lineitemtype = 'SavingsPlanNegation') THEN 0
+             WHEN (lineitem_lineitemtype = 'SavingsPlanUpfrontFee') THEN 0
+             WHEN (lineitem_lineitemtype = 'DiscountedUsage') THEN reservation_effectivecost
+             WHEN (lineitem_lineitemtype = 'RIFee') THEN (
+                 reservation_unusedamortizedupfrontfeeforbillingperiod + reservation_unusedrecurringfee)
+             WHEN ((lineitem_lineitemtype = 'Fee') AND (reservation_reservationarn <> '')) THEN 0
+             ELSE lineitem_unblendedcost
+       END)
+   )                                              AS                   ri_sp_trueup,
+SUM(CASE
+       WHEN (lineitem_lineitemtype = 'SavingsPlanUpfrontFee') THEN lineitem_unblendedcost
+       WHEN ((lineitem_lineitemtype = 'Fee') AND (reservation_reservationarn <> ''))
+           THEN lineitem_unblendedcost
+       ELSE 0
+   END)                                           AS                   ri_sp_upfront_fees
+FROM "prism-raw".etl_output
+WHERE yearmonth = '202504'
+  and modelid in ('6886a459-b349-433f-bcc2-fdcf36583672', '2c563e06-888a-44d3-bad5-630c8458bf90',
+                  '72a53c10-8c20-4ad4-8b0f-ecc0c0ae5181')
+  AND lineitem_usagetype <> 'Route53-Domains'
+  AND lineitem_lineitemtype IN
+      ('DiscountedUsage', 'Usage', 'SavingsPlanCoveredUsage', 'SavingsPlanNegation', 'SavingsPlanRecurringFee',
+       'SavingsPlanUpfrontFee', 'RIFee', 'Fee')
+  AND cost_allocation = 'Customer'
+  AND lineitem_productcode = 'AmazonEC2'
+GROUP BY bill_billingentity, bill_payeraccountid,
+         lineitem_usageaccountid,
+         3, 4, 5, 6, 7, 8, 9, 10
+ORDER BY bill_billingentity ASC,
+         lineitem_usagedate ASC,
+         bill_payeraccountid ASC,
+         case_purchase_option,
+         product_instancefamily,
+         sum_line_item_unblended_cost DESC;
+
+
+-- CTAS QUERY...
+CREATE TABLE "prism-raw"."ec2_curated_int"
+WITH (
+    format = 'PARQUET',
+    external_location = 's3://Enter_ARN_of_S3_bucket/',
+    partitioned_by = ARRAY['yearmonth', 'modelid']
+) AS
+SELECT
+    -- Time
+    lineitem_usagestartdate,
+
+    -- Account Info
+    bill_billingentity,
+    bill_payeraccountid,
+    lineitem_usageaccountid,
+
+    -- Product Info
+    product_productname,
+    lineitem_productcode,
+    product_instancetype,
+    product_instancefamily,
+
+    -- Usage & Line Type
+    lineitem_lineitemtype,
+    lineitem_usagetype,
+
+    -- Coverage Attributes
+    reservation_reservationarn,
+    pricing_offeringclass,
+    savingsplan_savingsplanarn,
+    savingsplan_offeringtype,
+
+    -- Cost Metrics
+    lineitem_unblendedcost,
+    lineitem_usageamount,
+    savingsplan_savingsplaneffectivecost,
+    savingsplan_totalcommitmenttodate,
+    savingsplan_usedcommitment,
+    reservation_effectivecost,
+    reservation_unusedamortizedupfrontfeeforbillingperiod,
+    reservation_unusedrecurringfee,
+
+    -- Partitioning
+    yearmonth,
+    modelid
+
+FROM "prism-raw"."etl_output"
+WHERE 
+    lineitem_productcode = 'AmazonEC2'
+    AND bill_billingentity IN ('AWS', 'AWS Marketplace')
+    AND lineitem_usagetype <> 'Route53-Domains'
+    AND cost_allocation = 'Customer'
+    AND lineitem_lineitemtype IN (
+        'DiscountedUsage', 'Usage', 'SavingsPlanCoveredUsage',
+        'SavingsPlanNegation', 'SavingsPlanRecurringFee',
+        'SavingsPlanUpfrontFee', 'RIFee', 'Fee'
+    );
+ 
