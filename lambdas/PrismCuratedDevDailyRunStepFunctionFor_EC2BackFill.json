@@ -7,8 +7,8 @@
       "Result": {
         "bucket_name": "prism-curated-dev",
         "folder": "tb_monthly_ec2_cost_summary/",
-        "start_ym": "202405",
-        "end_ym": "202506"
+        "start_ym": "0",
+        "end_ym": "0"
       },
       "ResultPath": "$",
       "Next": "Run S3 Delete yyyymm folders"
@@ -53,8 +53,8 @@
     "Initialize backfill": {
       "Type": "Pass",
       "Result": {
-        "startYearMonth": 202405,
-        "endYearMonth": 202506,
+        "startYearMonth": 0,
+        "endYearMonth": 0,
         "env": "dev"
       },
       "Next": "Generate Athena Queries"
