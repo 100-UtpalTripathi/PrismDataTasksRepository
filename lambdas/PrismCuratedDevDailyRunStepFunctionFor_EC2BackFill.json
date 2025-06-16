@@ -1,0 +1,144 @@
+{
+  "Comment": "State machine for EC2 cost summary backfill using Athena queries.",
+  "StartAt": "Delete yyyymm",
+  "States": {
+    "Delete yyyymm": {
+      "Type": "Pass",
+      "Result": {
+        "bucket_name": "prism-curated-dev",
+        "folder": "tb_monthly_ec2_cost_summary/",
+        "start_ym": "202405",
+        "end_ym": "202506"
+      },
+      "ResultPath": "$",
+      "Next": "Run S3 Delete yyyymm folders"
+    },
+    "Run S3 Delete yyyymm folders": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:us-east-1:604727574140:function:delete-s3-files-using-bash-prism:$LATEST"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.errorInfo",
+          "Next": "HandleDeleteFileFailure"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Initialize backfill"
+    },
+    "HandleDeleteFileFailure": {
+      "Type": "Fail",
+      "Error": "FileDeletionFailure",
+      "Cause": "S3 Cleanup failed"
+    },
+    "Initialize backfill": {
+      "Type": "Pass",
+      "Result": {
+        "startYearMonth": 202405,
+        "endYearMonth": 202506,
+        "env": "dev"
+      },
+      "Next": "Generate Athena Queries"
+    },
+    "Generate Athena Queries": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:us-east-1:604727574140:function:prism-execute-athena-query-ec2-daily-insert"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Parse Queries JSON",
+      "ResultSelector": {
+        "Payload.$": "States.StringToJson($.Payload)"
+      },
+      "OutputPath": "$.Payload.body"
+    },
+    "Parse Queries JSON": {
+      "Type": "Pass",
+      "Next": "Execute Athena Queries",
+      "Parameters": {
+        "yearMonthArray.$": "States.StringToJson($)"
+      },
+      "OutputPath": "$.yearMonthArray"
+    },
+    "Execute Athena Queries": {
+      "Type": "Map",
+      "ItemProcessor": {
+        "ProcessorConfig": {
+          "Mode": "INLINE"
+        },
+        "StartAt": "Run Athena Query",
+        "States": {
+          "Run Athena Query": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+            "Parameters": {
+              "QueryString.$": "$.query",
+              "QueryExecutionContext": {
+                "Database": "prism_curated_dev"
+              },
+              "ResultConfiguration": {
+                "OutputLocation": "s3://athena-604727574140-prism-frontend-wg-query-results/"
+              },
+              "WorkGroup": "prism-frontend-wg"
+            },
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "ResultPath": "$.athenaError",
+                "Next": "Handle Query Failure"
+              }
+            ],
+            "End": true
+          },
+          "Handle Query Failure": {
+            "Type": "Fail",
+            "Error": "AthenaQueryFailed",
+            "Cause": "One of the Athena queries failed."
+          }
+        }
+      },
+      "Next": "Success",
+      "ToleratedFailureCount": 5,
+      "ItemsPath": "$.yearMonthArray",
+      "MaxConcurrency": 15
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}

@@ -473,4 +473,145 @@ WHERE
         'SavingsPlanNegation', 'SavingsPlanRecurringFee',
         'SavingsPlanUpfrontFee', 'RIFee', 'Fee'
     );
+
+
+
+
+
+
+    // Restarting the query to ensure it works:
+
+    // DDL for creating the curated table
+-- DDL for creating the curated table
+-- This table will summarize monthly EC2 costs with necessary partitions
+-- and attributes for further analysis.
+
+    CREATE EXTERNAL TABLE IF NOT EXISTS prism_curated_dev.tb_monthly_ec2_cost_summary(
+  bill_billingentity                              string,
+  bill_payeraccountid                             string,
+  lineitem_usageaccountid                         string,
+
+  lineitem_productcode                            string,
+  product_productname                             string,
+  product_instancetype                            string,
+  product_instancefamily                          string,
+
+  lineitem_lineitemtype                           string,
+  lineitem_usagetype                              string,
+  lineitem_operation                              string,
+
+  reservation_reservationarn                      string,
+  pricing_offeringclass                           string,
+  pricing_term                                    string,
+  pricing_purchaseoption                          string,
+  savingsplan_savingsplanarn                      string,
+  savingsplan_offeringtype                        string,
+  savingsplan_totalcommitmenttodate               double,
+  savingsplan_usedcommitment                      double,
+  savingsplan_savingsplaneffectivecost            double,
+  reservation_effectivecost                       double,
+  reservation_unusedamortizedupfrontfeeforbillingperiod double,
+  reservation_unusedrecurringfee                  double,
+
+  lineitem_unblendedcost                          double,
+  lineitem_blendedcost                            double,
+  list_price                                      double,
+  effective_cost                                  double,
+  savings                                         double,
+
+  lineitem_lineitemdescription                    string,
+  cost_allocation                                 string
+)
+PARTITIONED BY (
+  yearmonth string,
+  modelid string
+)
+STORED AS PARQUET
+LOCATION 's3://prism-curated-dev/tb_monthly_ec2_cost_summary/'
+TBLPROPERTIES (
+  'parquet.compression'='SNAPPY'
+);
+
+
+
+-- was getting Athena partition limit, so need to insert data in batches
+-- prepared statement to insert data into the curated table by accepting yearmonth and list of modelids
+
+PREPARE insert_monthly_ec2_summary
+FROM
+INSERT INTO prism_curated_dev.tb_monthly_ec2_cost_summary
+SELECT
+  -- Account Info
+  bill_billingentity,
+  bill_payeraccountid,
+  lineitem_usageaccountid,
+
+  -- Product Info
+  lineitem_productcode,
+  product_productname,
+  product_instancetype,
+  product_instancefamily,
+
+  -- Line Item & Usage
+  lineitem_lineitemtype,
+  lineitem_usagetype,
+  lineitem_operation,
+
+  -- Coverage-related Fields
+  reservation_reservationarn,
+  pricing_offeringclass,
+  pricing_term,
+  pricing_purchaseoption,
+  savingsplan_savingsplanarn,
+  savingsplan_offeringtype,
+  savingsplan_totalcommitmenttodate,
+  savingsplan_usedcommitment,
+  savingsplan_savingsplaneffectivecost,
+  reservation_effectivecost,
+  reservation_unusedamortizedupfrontfeeforbillingperiod,
+  reservation_unusedrecurringfee,
+
+  -- Cost & Pricing
+  lineitem_unblendedcost,
+  lineitem_blendedcost,
+  list_price,
+  effective_cost,
+  savings,
+
+  -- Misc
+  lineitem_lineitemdescription,
+  cost_allocation,
+
+  -- Partition Columns
+  yearmonth,
+  modelid
+
+FROM "prism-raw".etl_output
+
+WHERE
+  yearmonth = ?
+  AND modelid IN (
+    SELECT value 
+    FROM (
+      WITH ids AS (
+        SELECT ? AS data
+      )
+      SELECT value 
+      FROM ids 
+      CROSS JOIN UNNEST(split(ids.data, ',')) AS x(value)
+    )
+  )
+  AND lineitem_productcode = 'AmazonEC2'
+  AND bill_billingentity IN ('AWS', 'AWS Marketplace')
+  AND lineitem_usagetype <> 'Route53-Domains'
+  AND cost_allocation = 'Customer'
+  AND lineitem_lineitemtype IN (
+    'DiscountedUsage', 'Usage', 'SavingsPlanCoveredUsage',
+    'SavingsPlanNegation', 'SavingsPlanRecurringFee',
+    'SavingsPlanUpfrontFee', 'RIFee', 'Fee'
+  );
+
+
+ 
+
  
