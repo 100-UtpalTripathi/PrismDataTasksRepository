@@ -1,3 +1,4 @@
+
 {
   "Comment": "State machine for EC2 cost summary backfill using Athena queries, with failure notifications",
   "StartAt": "Delete yyyymm",
@@ -35,9 +36,7 @@
       ],
       "Catch": [
         {
-          "ErrorEquals": [
-            "States.ALL"
-          ],
+          "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.errorInfo",
           "Next": "Notify Delete Failure"
         }
@@ -46,25 +45,11 @@
     },
     "Notify Delete Failure": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::aws-sdk:ses:sendEmail",
+      "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
-        "Source": "no-reply@prismdev.presidio.com",
-        "Destination": {
-          "ToAddresses": [
-            "utripathi@presidio.com",
-            "meswaramoorthy@presidio.com"
-          ]
-        },
-        "Message": {
-          "Subject": {
-            "Data": "❗ EC2 Pipeline: S3 Cleanup Failed"
-          },
-          "Body": {
-            "Html": {
-              "Data": "<html><body style=\"font-family: Arial, sans-serif; font-size: 14px; color: #333;\"><div style=\"border-left: 4px solid #d9534f; padding-left: 10px;\"><h3 style=\"color: #d9534f;\">❗ EC2 Pipeline: S3 Cleanup Failed</h3><p><strong>Delete step failed.</strong></p></div></body></html>"
-            }
-          }
-        }
+        "TopicArn": "YOUR_SNS_TOPIC_ARN",
+        "Subject": "❗ EC2 Pipeline: S3 Cleanup Failed",
+        "Message": "Delete step failed.\nDetails: StatesPath=$.errorInfo"
       },
       "Next": "HandleDeleteFileFailure"
     },
@@ -104,9 +89,7 @@
       ],
       "Catch": [
         {
-          "ErrorEquals": [
-            "States.ALL"
-          ],
+          "ErrorEquals": ["States.ALL"],
           "ResultPath": "$.errorInfo",
           "Next": "Notify Generate Query Failure"
         }
@@ -119,25 +102,11 @@
     },
     "Notify Generate Query Failure": {
       "Type": "Task",
-      "Resource": "arn:aws:states:::aws-sdk:ses:sendEmail",
+      "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
-        "Source": "no-reply@prismdev.presidio.com",
-        "Destination": {
-          "ToAddresses": [
-            "utripathi@presidio.com",
-            "meswaramoorthy@presidio.com"
-          ]
-        },
-        "Message": {
-          "Subject": {
-            "Data": "❗ EC2 Pipeline: Query Generation Failed"
-          },
-          "Body": {
-            "Html": {
-              "Data": "<html><body style=\"font-family: Arial, sans-serif; font-size: 14px; color: #333;\"><div style=\"border-left: 4px solid #d9534f; padding-left: 10px;\"><h3 style=\"color: #d9534f;\">❗ EC2 Pipeline: Query Generation Failed</h3><p><strong>Delete step failed.</strong></p></div></body></html>"
-            }
-          }
-        }
+        "TopicArn": "YOUR_SNS_TOPIC_ARN",
+        "Subject": "❗ EC2 Pipeline: Query Gen Failed",
+        "Message": "Failed to generate Athena queries.\nDetails: StatesPath=$.errorInfo"
       },
       "Next": "Fail Generate Query"
     },
@@ -177,9 +146,7 @@
             },
             "Catch": [
               {
-                "ErrorEquals": [
-                  "States.ALL"
-                ],
+                "ErrorEquals": ["States.ALL"],
                 "ResultPath": "$.athenaError",
                 "Next": "Notify Athena Failure"
               }
@@ -188,25 +155,11 @@
           },
           "Notify Athena Failure": {
             "Type": "Task",
-            "Resource": "arn:aws:states:::aws-sdk:ses:sendEmail",
+            "Resource": "arn:aws:states:::sns:publish",
             "Parameters": {
-              "Source": "no-reply@prismdev.presidio.com",
-              "Destination": {
-                "ToAddresses": [
-                  "utripathi@presidio.com",
-                  "meswaramoorthy@presidio.com"
-                ]
-              },
-              "Message": {
-                "Subject": {
-                  "Data": "❗ EC2 Pipeline: Athena Queries Failed"
-                },
-                "Body": {
-                  "Html": {
-                    "Data": "<html><body style=\"font-family: Arial, sans-serif; font-size: 14px; color: #333;\"><div style=\"border-left: 4px solid #d9534f; padding-left: 10px;\"><h3 style=\"color: #d9534f;\">❗ EC2 Pipeline: Athena Queries Failed</h3><p><strong>Delete step failed.</strong></p></div></body></html>"
-                  }
-                }
-              }
+              "TopicArn": "YOUR_SNS_TOPIC_ARN",
+              "Subject": "❗ EC2 Pipeline: Athena Query Failed",
+              "Message": "Athena query execution failed for: $.query\nError: $.athenaError"
             },
             "Next": "Handle Query Failure"
           },
