@@ -1,0 +1,223 @@
+{
+  "Comment": "State machine for EC2 cost summary backfill using Athena queries, with failure notifications",
+  "StartAt": "Delete yyyymm",
+  "States": {
+    "Delete yyyymm": {
+      "Type": "Pass",
+      "Result": {
+        "bucket_name": "prism-curated-dev",
+        "folder": "tb_daily_cost_summary/",
+        "start_ym": "202401",
+        "end_ym": "202507"
+      },
+      "ResultPath": "$",
+      "Next": "Run S3 Delete yyyymm folders"
+    },
+    "Run S3 Delete yyyymm folders": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:us-east-1:604727574140:function:prism_daily_pipeline_s3_cleanup"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.errorInfo",
+          "Next": "Notify Delete Failure"
+        }
+      ],
+      "Next": "Initialize backfill"
+    },
+    "Notify Delete Failure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ses:sendEmail",
+      "Parameters": {
+        "Source": "no-reply@prismdev.presidio.com",
+        "Destination": {
+          "ToAddresses": [
+            "utripathi@presidio.com"
+          ]
+        },
+        "Message": {
+          "Subject": {
+            "Data": "❗ Daily Pipeline: S3 Cleanup Failed"
+          },
+          "Body": {
+            "Html": {
+              "Data": "<html><body style=\"font-family: Arial, sans-serif; font-size: 14px; color: #333;\"><div style=\"border-left: 4px solid #d9534f; padding-left: 10px;\"><h3 style=\"color: #d9534f;\">❗ Daily Pipeline: S3 Cleanup Failed</h3><p><strong>S3 Cleanup step failed.</strong></p></div></body></html>"
+            }
+          }
+        }
+      },
+      "Next": "HandleDeleteFileFailure"
+    },
+    "HandleDeleteFileFailure": {
+      "Type": "Fail",
+      "Error": "FileDeletionFailure",
+      "Cause": "S3 Cleanup failed"
+    },
+    "Initialize backfill": {
+      "Type": "Pass",
+      "Result": {
+        "startYearMonth": "202401",
+        "endYearMonth": "202507",
+        "env": "dev"
+      },
+      "Next": "Generate Athena Queries"
+    },
+    "Generate Athena Queries": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "arn:aws:lambda:us-east-1:604727574140:function:prism_daily_pipeline_generate_backfill_queries"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 1,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "ResultPath": "$.errorInfo",
+          "Next": "Notify Generate Query Failure"
+        }
+      ],
+      "Next": "Parse Queries JSON",
+      "ResultSelector": {
+        "Payload.$": "States.StringToJson($.Payload)"
+      },
+      "OutputPath": "$.Payload.body"
+    },
+    "Notify Generate Query Failure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:ses:sendEmail",
+      "Parameters": {
+        "Source": "no-reply@prismdev.presidio.com",
+        "Destination": {
+          "ToAddresses": [
+            "utripathi@presidio.com"
+          ]
+        },
+        "Message": {
+          "Subject": {
+            "Data": "❗ Daily Pipeline: Query Generation Failed"
+          },
+          "Body": {
+            "Html": {
+              "Data": "<html><body style=\"font-family: Arial, sans-serif; font-size: 14px; color: #333;\"><div style=\"border-left: 4px solid #d9534f; padding-left: 10px;\"><h3 style=\"color: #d9534f;\">❗ Daily Pipeline: Query Generation Failed</h3><p><strong>Query Generator lambda failed.</strong></p></div></body></html>"
+            }
+          }
+        }
+      },
+      "Next": "Fail Generate Query"
+    },
+    "Fail Generate Query": {
+      "Type": "Fail",
+      "Error": "GenerateQueryFailure",
+      "Cause": "Athena query generation failed"
+    },
+    "Parse Queries JSON": {
+      "Type": "Pass",
+      "Next": "Execute Athena Queries",
+      "Parameters": {
+        "queries.$": "States.StringToJson($)"
+      },
+      "OutputPath": "$.queries"
+    },
+    "Execute Athena Queries": {
+      "Type": "Map",
+      "ItemsPath": "$.queries",
+      "MaxConcurrency": 15,
+      "ToleratedFailureCount": 5,
+      "ItemProcessor": {
+        "StartAt": "Run Athena Query",
+        "States": {
+          "Run Athena Query": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::athena:startQueryExecution.sync",
+            "Parameters": {
+              "QueryString.$": "$.query",
+              "QueryExecutionContext": {
+                "Database": "prism_curated_dev"
+              },
+              "ResultConfiguration": {
+                "OutputLocation": "s3://athena-604727574140-prism-frontend-wg-query-results/"
+              },
+              "WorkGroup": "prism-frontend-wg"
+            },
+            "Catch": [
+              {
+                "ErrorEquals": [
+                  "States.ALL"
+                ],
+                "ResultPath": "$.athenaError",
+                "Next": "Notify Athena Failure"
+              }
+            ],
+            "End": true
+          },
+          "Notify Athena Failure": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:ses:sendEmail",
+            "Parameters": {
+              "Source": "no-reply@prismdev.presidio.com",
+              "Destination": {
+                "ToAddresses": [
+                  "utripathi@presidio.com"
+                ]
+              },
+              "Message": {
+                "Subject": {
+                  "Data": "❗ Daily Pipeline: Athena Queries Failed"
+                },
+                "Body": {
+                  "Html": {
+                    "Data": "<html><body style=\"font-family: Arial, sans-serif; font-size: 14px; color: #333;\"><div style=\"border-left: 4px solid #d9534f; padding-left: 10px;\"><h3 style=\"color: #d9534f;\">❗ Daily Pipeline: Athena Queries Failed</h3><p><strong>Athena Query Execution failed!</strong></p></div></body></html>"
+                  }
+                }
+              }
+            },
+            "Next": "Handle Query Failure"
+          },
+          "Handle Query Failure": {
+            "Type": "Fail",
+            "Error": "AthenaQueryFailed",
+            "Cause": "One of the Athena queries failed"
+          }
+        }
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}
