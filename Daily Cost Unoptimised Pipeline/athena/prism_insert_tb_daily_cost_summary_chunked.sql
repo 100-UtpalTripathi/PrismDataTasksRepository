@@ -6,14 +6,15 @@ SELECT
   bill_billingentity,                                                    
   lineitem_usageaccountid,                                              
   lineitem_productcode,                                                 
-  lineitem_lineitemdescription,                                         
+  lineitem_lineitemdescription, 
+  lineitem_lineitemtype,
   product_productname,                                                   
   discount_applied,                                                      
-  SUM(list_price) AS list_price,                                        
-  SUM(lineitem_unblendedcost) AS lineitem_unblendedcost,                
-  SUM(lineitem_blendedcost) AS lineitem_blendedcost,                    
-  SUM(effective_cost) AS effective_cost,                            
-  SUM(savings) AS savings,                                              
+  SUM(list_price) AS sum_list_price,                                        
+  SUM(lineitem_unblendedcost) AS sum_lineitem_unblendedcost,                
+  SUM(lineitem_blendedcost) AS sum_lineitem_blendedcost,                    
+  SUM(effective_cost) AS sum_effective_cost,                            
+  SUM(savings) AS sum_savings,                                              
   DATE(lineitem_usagestartdate) AS lineitem_usagedate,                  
   date_add(
     'day',
@@ -39,17 +40,18 @@ WHERE
   )
   AND cost_allocation = 'Customer'
 GROUP BY
-  15, 
-  16,  
+  16, 
+  17,  
+  15,  
   14,  
-  13,  
   1,   
   2,   
   3,   
   4,   
   5,  
   6,  
-  7;   
+  7,
+  8;   
   
   
   

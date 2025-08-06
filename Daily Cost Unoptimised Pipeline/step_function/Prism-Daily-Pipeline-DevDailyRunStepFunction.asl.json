@@ -6,7 +6,7 @@
       "Type": "Pass",
       "Result": {
         "bucket_name": "prism-curated-dev",
-        "folder": "tb_daily_cost_summary/",
+        "folder": "tb_cost_history_summary/",
         "start_ym": "202401",
         "end_ym": "202507"
       },
