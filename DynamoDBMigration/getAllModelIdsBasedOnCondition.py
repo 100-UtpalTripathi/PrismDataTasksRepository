@@ -1,7 +1,7 @@
 import boto3
 
 ROLE_B_ARN = "arn:aws:iam::604727574140:role/CrossAccountDDBRead_PrismResellTracker"
-TABLE_ARN  = "arn:aws:dynamodb:us-east-1:246778806733:table/prism-ops-dynamodb-resell-tracker"
+TABLE_ARN  = "arn:aws:dynamodb:us-east-1:246778806733:table/prism-ops-dynamodb-resell-tracker-data"
 REGION     = "us-east-1"
 
 def _ddb_as_role_b():
@@ -21,21 +21,21 @@ def lambda_handler(event, context):
     model_ids = []
     params = {
         "TableName": TABLE_ARN,
-        "ProjectionExpression": "#mid",
-        "ExpressionAttributeNames": {"#mid": "ModelID", "#prism": "PRISM"},
-        "FilterExpression": "#prism = :val",
-        "ExpressionAttributeValues": {":val": {"BOOL": True}}
+        "ProjectionExpression": "model_id",
+        "FilterExpression": "is_prism = :t",
+        "ExpressionAttributeValues": {":t": {"BOOL": True}},
     }
 
     resp = ddb.scan(**params)
-    for it in resp.get("Items", []):
-        if "ModelID" in it and "S" in it["ModelID"]:
-            model_ids.append(it["ModelID"]["S"])
-
-    while "LastEvaluatedKey" in resp:
-        resp = ddb.scan(ExclusiveStartKey=resp["LastEvaluatedKey"], **params)
+    while True:
         for it in resp.get("Items", []):
-            if "ModelID" in it and "S" in it["ModelID"]:
-                model_ids.append(it["ModelID"]["S"])
+            mid = it.get("model_id", {}).get("S")
+            if mid:
+                model_ids.append(mid)
+
+        lek = resp.get("LastEvaluatedKey")
+        if not lek:
+            break
+        resp = ddb.scan(ExclusiveStartKey=lek, **params)
 
     return {"count": len(model_ids), "model_ids": model_ids}

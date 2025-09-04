@@ -2,20 +2,14 @@ import json
 import datetime
 import boto3
 
-# --- constants ---
-ROLE_B_ARN = "arn:aws:iam::604727574140:role/CrossAccountDDBRead_PrismResellTracker"  # the role CrossAccount allowed!
-TABLE_ARN  = "arn:aws:dynamodb:us-east-1:246778806733:table/prism-ops-dynamodb-resell-tracker"
+# >>> added: cross-account DDB constants
+ROLE_B_ARN = "arn:aws:iam::604727574140:role/CrossAccountDDBRead_PrismResellTracker"  #role allowed for cross account access
+TABLE_ARN  = "arn:aws:dynamodb:us-east-1:246778806733:table/prism-ops-dynamodb-resell-tracker-data"
 REGION     = "us-east-1"
 
-
 def _ddb_client_as_role_b():
-    """
-    Assume Role-B (the role listed as Principal on Nick's table),
-    then build a DynamoDB client with the temporary credentials.
-    """
     sts = boto3.client("sts")
     creds = sts.assume_role(RoleArn=ROLE_B_ARN, RoleSessionName="ddb-xacct")["Credentials"]
-
     return boto3.client(
         "dynamodb",
         region_name=REGION,
@@ -24,35 +18,28 @@ def _ddb_client_as_role_b():
         aws_session_token=creds["SessionToken"],
     )
 
-
 def get_model_ids_from_ddb():
-    """
-    Return a list of all ModelID (strings) for items where PRISM = true.
-    Uses ProjectionExpression to only fetch ModelID, and paginates through the table.
-    """
     ddb = _ddb_client_as_role_b()
 
     model_ids = []
     params = {
         "TableName": TABLE_ARN,
-        "ProjectionExpression": "#mid",                         # only return ModelID
-        "ExpressionAttributeNames": {"#mid": "ModelID", "#p": "PRISM"},
-        "FilterExpression": "#p = :true",                       # keep items where PRISM == true
+        "ProjectionExpression": "model_id",
+        "FilterExpression": "is_prism = :true",
         "ExpressionAttributeValues": {":true": {"BOOL": True}},
     }
 
     resp = ddb.scan(**params)
-    for it in resp.get("Items", []):
-        # low-level client returns DynamoDB-typed JSON: {"ModelID": {"S": "<uuid>"}}
-        if "ModelID" in it and "S" in it["ModelID"]:
-            model_ids.append(it["ModelID"]["S"])
-
-    # paginate if there are more pages
-    while "LastEvaluatedKey" in resp:
-        resp = ddb.scan(ExclusiveStartKey=resp["LastEvaluatedKey"], **params)
+    while True:
         for it in resp.get("Items", []):
-            if "ModelID" in it and "S" in it["ModelID"]:
-                model_ids.append(it["ModelID"]["S"])
+            mid = it.get("model_id", {}).get("S")
+            if mid:
+                model_ids.append(mid)
+
+        lek = resp.get("LastEvaluatedKey")
+        if not lek:
+            break
+        resp = ddb.scan(ExclusiveStartKey=lek, **params)
 
     return model_ids
 
